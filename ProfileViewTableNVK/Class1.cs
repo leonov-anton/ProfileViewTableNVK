@@ -66,13 +66,6 @@ namespace ProfileViewTableNVK
 
                     else
                     {
-                        foreach (ObjectId profId in profileViewAligment.GetProfileIds())
-                        {
-                            Profile profile = (Profile)t.GetObject(profId, OpenMode.ForWrite);
-                            if (profile.Name.ToLower().Contains("лоток"))
-                                profile.Erase();
-                        }
-
                         List<string> overrideStylePipesName = new List<string>();
                         foreach (PipeOverride pipe in profileView.PipeOverrides)
                         {
