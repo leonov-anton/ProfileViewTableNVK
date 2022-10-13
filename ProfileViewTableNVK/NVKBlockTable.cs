@@ -3,6 +3,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using Autodesk.AutoCAD.Colors;
 
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
@@ -10,14 +11,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-
 namespace ProfileViewTableNVK
 {
-    public class Class1
+    public class NVKBlockTable
     {
         // константы
         const string pipeTypeText = "К2_трубы_обозначение трубы и тип изоляции-";
         const string pipeSlopeText = "К2_трубы_обозначение уклона и длины-";
+        const string aligAngleText = "К2_угол_поворота_трассы-";
         const double k1Yoffset = 47.5;
         const double k2Yoffset = 40;
         const double bYoffset = 52.5;
@@ -83,6 +84,7 @@ namespace ProfileViewTableNVK
                     // удаление ранее созданных блоков
                     BlockErase(db, $"{pipeTypeText}{profileViewAligment.Name}");
                     BlockErase(db, $"{pipeSlopeText}{profileViewAligment.Name}");
+                    BlockErase(db, $"{aligAngleText}{profileViewAligment.Name}");
 
                     // текущее пространство документа
                     BlockTableRecord btr = (BlockTableRecord)t.GetObject(db.CurrentSpaceId, OpenMode.ForWrite);
@@ -126,6 +128,122 @@ namespace ProfileViewTableNVK
                         typeBtr.AppendEntity(startLineType);
                         t.AddNewlyCreatedDBObject(startLineType, true);
 
+                        // создание блока углов поворота трассы
+                        BlockTableRecord angleBtr = new BlockTableRecord();
+                        angleBtr.Name = $"{aligAngleText}{profileViewAligment.Name}";
+                        ObjectId angleBtrId = bt.Add(angleBtr);
+                        t.AddNewlyCreatedDBObject(angleBtr, true);
+
+                        // создение осевой линии
+                        Line centerLine = new Line(new Point3d(0, 2.5, 0), new Point3d(profileViewAligment.EndingStation, 2.5, 0));
+                        centerLine.Color = Color.FromRgb(0, 0, 255);
+                        centerLine.LineWeight = LineWeight.LineWeight030;
+                        angleBtr.AppendEntity(centerLine);
+                        t.AddNewlyCreatedDBObject(centerLine, true);
+
+                        // части трассы
+                        AlignmentEntityCollection entCol = profileViewAligment.Entities;
+
+                        for (int i = 1; i < entCol.Count(); i++)
+                        {
+                            // принимаем что все части трассы только прямые
+                            AlignmentLine aligEnt = (AlignmentLine)entCol[i];
+                            AlignmentLine privAligEnt = (AlignmentLine)entCol[i-1];
+
+                            // вектор части трассы
+                            MyVector2d privEntVec = new MyVector2d(privAligEnt.StartPoint.X, privAligEnt.StartPoint.Y, privAligEnt.EndPoint.X, privAligEnt.EndPoint.Y);
+                            MyVector2d entVec = new MyVector2d(aligEnt.StartPoint.X, aligEnt.StartPoint.Y, aligEnt.EndPoint.X, aligEnt.EndPoint.Y);
+
+                            // угол между частями
+                            double angle = Math.Round(MyVector2d.Angle(privEntVec, entVec), 1);
+
+                            // вертикальный отрезок на углу поворота трассы
+                            Line angleLine = new Line(new Point3d(aligEnt.StartStation, 0, 0), new Point3d(aligEnt.StartStation, 5, 0));
+                            angleBtr.AppendEntity(angleLine);
+                            t.AddNewlyCreatedDBObject(angleLine, true);
+
+                            // кружок на углу поворота трассы
+                            Circle angleCircle = new Circle();
+                            angleCircle.Center = new Point3d(aligEnt.StartStation, 2.5, 0);
+                            angleCircle.Radius = 0.2;
+                            angleBtr.AppendEntity(angleCircle);
+                            t.AddNewlyCreatedDBObject(angleCircle, true);
+
+                            ObjectIdCollection hatchCircCol = new ObjectIdCollection();
+                            hatchCircCol.Add(angleCircle.ObjectId);
+                            
+                            // штриховка кружка
+                            Hatch hatchCirc = new Hatch();
+                            hatchCirc.SetHatchPattern(HatchPatternType.PreDefined, "SOLID");
+                            hatchCirc.AppendLoop(HatchLoopTypes.Outermost, hatchCircCol);
+                            angleBtr.AppendEntity(hatchCirc);
+                            t.AddNewlyCreatedDBObject(hatchCirc, true);
+
+                            // номер угла поворота
+                            MText angleNumText = new MText();
+                            angleNumText.Contents = $"УП{i}";
+                            angleNumText.Location = new Point3d(aligEnt.StartStation - 0.5, 3, 0);
+                            angleNumText.Attachment = AttachmentPoint.BottomRight;
+                            angleBtr.AppendEntity(angleNumText);
+                            t.AddNewlyCreatedDBObject(angleNumText, true);
+
+                            // текст угла поворота
+                            MText angleDigText = new MText();
+                            angleDigText.Location = new Point3d(aligEnt.StartStation - 0.5, 2, 0);
+                            angleDigText.Attachment = AttachmentPoint.TopRight;
+                            
+                            // стрелка и дуга на углу поворота
+                            Polyline arow = new Polyline();
+                            Arc arc = new Arc();
+                            arc.Center = angleCircle.Center;
+                            arc.Radius = 0.6;
+
+                            // положение стрелки и дуги в зависимости от угла
+                            if (angle > 0)
+                            {
+                                angleDigText.Contents = $"{angle}°";
+                                arow.AddVertexAt(0, new Point2d(aligEnt.StartStation - 0.3, 3.5), 0, 0, 0);
+                                arow.AddVertexAt(1, new Point2d(aligEnt.StartStation, 4.7), 0, 0, 0);
+                                arow.AddVertexAt(0, new Point2d(aligEnt.StartStation + 0.3, 3.5), 0, 0, 0);
+                                arow.Closed = true;
+                                arc.StartAngle = 0;
+                                arc.EndAngle = 1.5708;
+                            }
+                            else
+                            {
+                                angleDigText.Contents = $"{-angle}°";
+                                arow.AddVertexAt(0, new Point2d(aligEnt.StartStation - 0.3, 1.5), 0, 0, 0);
+                                arow.AddVertexAt(1, new Point2d(aligEnt.StartStation, 0.3), 0, 0, 0);
+                                arow.AddVertexAt(0, new Point2d(aligEnt.StartStation + 0.3, 1.5), 0, 0, 0);
+                                arow.Closed = true;
+                                arc.StartAngle = 4.71239;
+                                arc.EndAngle = 0;
+                            }
+
+                            angleBtr.AppendEntity(angleDigText);
+                            t.AddNewlyCreatedDBObject(angleDigText, true);
+
+                            angleBtr.AppendEntity(arow);
+                            t.AddNewlyCreatedDBObject(arow, true);
+
+                            angleBtr.AppendEntity(arc);
+                            t.AddNewlyCreatedDBObject(arc, true);
+
+                            ObjectIdCollection hatchArowCol = new ObjectIdCollection();
+                            hatchArowCol.Add(arow.ObjectId);
+
+                            // штриховка стрелочки
+                            Hatch hatchArow = new Hatch();
+                            hatchArow.SetHatchPattern(HatchPatternType.PreDefined, "SOLID");
+                            hatchArow.AppendLoop(HatchLoopTypes.Outermost, hatchArowCol);
+                            angleBtr.AppendEntity(hatchArow);
+                            t.AddNewlyCreatedDBObject(hatchArow, true);
+                        }
+
+                        // вставка блока строки углов поворота трассы
+                        BlockReference brAngle = new BlockReference(new Point3d(profileView.Location.X, profileView.Location.Y - 70, profileView.Location.Z), angleBtrId);
+                        btr.AppendEntity(brAngle);
+                        t.AddNewlyCreatedDBObject(brAngle, true);
 
                         // наполение коллекции труб для создания блоков
                         foreach (ObjectId pipeNetId in presPipeNets)
@@ -273,7 +391,7 @@ namespace ProfileViewTableNVK
                             }
                         }
 
-                        // обработка последующих трую
+                        // обработка последующих труб
                         while (pipes.Count > 0)
                         {
                             ObjectId privStructId = privPipe.EndStructureId;
@@ -364,7 +482,6 @@ namespace ProfileViewTableNVK
                     BlockReference brType = new BlockReference(new Point3d(profileView.Location.X, profileView.Location.Y - 30, profileView.Location.Z), typeBtrId);
                     btr.AppendEntity(brType);
                     t.AddNewlyCreatedDBObject(brType, true);
-
                 }
                 t.Commit();
             }
