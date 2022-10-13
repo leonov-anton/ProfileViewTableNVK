@@ -22,6 +22,8 @@ namespace ProfileViewTableNVK
         const double k1Yoffset = 47.5;
         const double k2Yoffset = 40;
         const double bYoffset = 52.5;
+        const double kTypeOffset = 30;
+        const double bTypeOffset = 37.5;
 
         [CommandMethod("PVNVKTABLE")]
         static public void CreateBlockTable()
@@ -465,9 +467,13 @@ namespace ProfileViewTableNVK
                     }
 
                     // определение смещения точки вставки по Y
-                    double slopeYOffset = 0;
-                    if(profileView.Name.Contains("В1") || profileView.Name.Contains("В2"))
+                    double slopeYOffset;
+                    double typeYOffset = kTypeOffset;
+                    if (profileView.Name.Contains("В1") || profileView.Name.Contains("В2"))
+                    {
                         slopeYOffset = bYoffset;
+                        typeYOffset = bTypeOffset;
+                    }       
                     else if (profileView.Name.Contains("К1"))
                         slopeYOffset = k1Yoffset;
                     else
@@ -479,7 +485,7 @@ namespace ProfileViewTableNVK
                     t.AddNewlyCreatedDBObject(brSlope, true);
 
                     // вставка блока строки типа труб
-                    BlockReference brType = new BlockReference(new Point3d(profileView.Location.X, profileView.Location.Y - 30, profileView.Location.Z), typeBtrId);
+                    BlockReference brType = new BlockReference(new Point3d(profileView.Location.X, profileView.Location.Y - typeYOffset, profileView.Location.Z), typeBtrId);
                     btr.AppendEntity(brType);
                     t.AddNewlyCreatedDBObject(brType, true);
                 }
